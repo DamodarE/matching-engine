@@ -50,15 +50,33 @@ How do you maintain time priority within the same price level?
 
 At each price level, we maintain a FIFO doubly linked list which is sorted by the time of the order. New orders placed at the existing price level will be put at the end of the doubly linked list and and as the engine matches orders at the price level, the head will move forward.
 
-
 What is heap allocation and why is it slow?
 
 Heap allocation is the dyanmic process of allocation memory in a program's global memory pool (the heap) at runtime. It is slow because it relies on metadat strucutres like freelist that search for and keep track of free space blocks, may require a system call for more memory, and can face memory fragmentation. The heap tends to face poorer cache locality due to memory fragmentation. 
 
-
 Memory Fragmentation: When free memory is broken down into smaller chunks with "gaps" because data that is stored can't be fit into the gaps or is dynamically added/removed.
 
 Cache Locality: The tendency of a program to access memory locations that are close together in space or time, making cache hits more likely and improving perfomance. 
+
+What is a memory pool and how does it help?
+
+A memory pool is a predetermined large block of memory that is broken into smaller chunks. Instead of requesting for memory from the system every time, it sets aside a larger block and allocates to smaller data as needed. By allocating one larger chunk, it prevents frequent reallocation and system calls for more memory, reduces memory fragmentation and as a result improves cache locality.
+
+What is stack vs heap memory?
+
+Stack memory is automatically managed memory used for function calls and local variables. New data is appeneded to the end of the stack and is also removed at the end as well. This prevents memory fragmentation since its placed sequentially and improves cache locality. However the stack is limited in size and is not suited for large or dynamically allocated objects
+
+Heap memeory is a region of memeory used for dynamic allocation of memory at runtime. Metadata structures like freelists keep track of the free space in the heap, and memory is allocated to data based on the free gaps that are large enough (determined by the freelist). However, since the memory in the heap can be dynamically modified (add, remove, extend), this can lead to memory fragmentation and reduce cache locality.
+
+What does RAII mean in C++ and why does it matter?
+
+RAII stands for Resource Acquisition is Initialization. This is a C++ technique in which an objects creation and destruction is tied to a resource being created or destroyed. When you acquire a resource in the contstructor, you automatically release the resource in the deconstructor. This matters because it gurantees that objects in the stack and heap are destroyed when they are out of scope and their respective resources as well. This prevents the underlying resource from leaking even if there is an error or an exception is thrown. 
+
+What is a smart pointer (unique_ptr, shared_ptr) and when do you use each?
+
+A smart pointer is a class that is a wrapper for traditional pointers that automatically managees the lifecycle of dynamically allocated memory. It follows RAII and deallocates memeory as the pointer goes out of scope. This prevents resource leaks and dangling pointers. You use a unqiue ptr when you want one pointer to hold ownership of an object and use a shared pointer when you want multiple pointers to share an object.
+
+
 
 
 
