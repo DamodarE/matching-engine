@@ -74,8 +74,68 @@ RAII stands for Resource Acquisition is Initialization. This is a C++ technique 
 
 What is a smart pointer (unique_ptr, shared_ptr) and when do you use each?
 
-A smart pointer is a class that is a wrapper for traditional pointers that automatically managees the lifecycle of dynamically allocated memory. It follows RAII and deallocates memeory as the pointer goes out of scope. This prevents resource leaks and dangling pointers. You use a unqiue ptr when you want one pointer to hold ownership of an object and use a shared pointer when you want multiple pointers to share an object.
+A smart pointer is a class that is a wrapper for traditional pointers that automatically managees the lifecycle of dynamically allocated memory. It follows RAII and deallocates memeory as the pointer goes out of scope. This prevents resource leaks and dangling pointers. You use a unqiue ptr when you want one owner (smart pointer) to hold ownership of an object and use a shared pointer when you want multiple owners to share an object.
 
+What is cache locality and why does it matter for performance?
+
+Cache locality is a programs tendency to prefer to look at memory locations that are in close proximity to each other. This make cache hits more likely and for the program to run faster and reduce memory access latency.
+
+What is the difference between L1, L2, and L3 cache?
+
+CPU caches are memory banks that are built directly into the processor that allow for fast access of objects in memory. The L1 cache is the smallest and quickest, and L2 is slightly larger and slower. L3 is the largest cache but the slowest of the three. The separation of caches creates a hirearchy in which the most frequently accessed data is placed in the fastest cache L1. 
+
+Why is iterating over a std::vector faster than a std::list?
+
+A std::vector is a faster thatn a std::list becuase it relies on cache locality. The std:vector is stored in one continguous block of memeory while the list is a doubly linked list with nodes not needing to be next to each other in memory. With memory close together in a vector, it makes it easier for the cache to hit it, resulting in a faster performance. 
+
+
+What is a cache miss and what causes one?
+
+A cache miss is when data is trying to get pulled from a cache and its not there, which causes it to pull from a lower cache level or RAM. Cache misses are caused by poor cache locality, such as : accessing memory in scattered locations, working with large datasets bigger than the cache, or accessing data for the first time.
+
+What does "cache-aware data structure" mean?
+
+A cache-aware data strucutre is a data structure in which the memory layout is designed to improve cache locality and optimize the CPU cache efficiency. These data structures utilize three techniques to do so. First, the CPU pulls in cache lines (64 bytes), a standard block instead of individual bytes. They also leverage spacial locality, having the data be stored in continguous or close proximity memory locations to improve cache locality. Lastly, they use hardware prefecthing to have the CPU to predict future memory requests and prefetch contiguous blocks of memory ahead of time. 
+
+What is the time complexity of inserting into and removing from your order book?
+
+In the initial approach of using a balanced BST for price levels and a doubly linked list for the orders inside of it,  it would O (logn) to insert and O(logn) to remove since there will be hashmap that stores the orderID as the key and the order node as the value. In most cases, the remove would be O(1) but is worst case O (logn) when removing a order that is the last in its price level, since you remove the price level as well.
+
+What is the time complexity of finding the best bid/ask?
+
+The time complexity of finding the best best bid/ask should be O (1) since there should be a pointer to it. To find the next best after a price level disappears, it would be O (logn) since you have the find the successor node.
+
+What is the time complexity of cancelling an order by ID?
+
+This should be O(1) since you use the hashmap to find and remove the order. If its the last one it is price level, then you must remove the price level and balance the tree, which is worst case O(logn). Therefore its O(logn)
+
+What does O(log n) mean in practice for 1 million orders?
+
+For a large number of orders, it starts behaving like constant time O(1), which is very good for performance. Every step in the algorithm cuts the input by half, which makes a significant impact on the runtime for 1 million orders. 
+
+What are move semantics and why do they matter for performance?
+
+Move semantics allow a program to transfer ownership of a object's resources, like dynamic memory, instead of creating a duplicate. Creating a duplicate is costly and can tank performance, so move semantics ensure efficient management and transfer of resources. It reduces the time complexity for moving a pointer from O(n) to O (1)
+
+What is std::optional and when is it useful?
+
+std::optional is a template class that acts as a wrapper around an object that represents a value that may or may not exist. It is useful as a return type for error handling and avoids unsafe practices like null pointers. 
+
+What is the difference between struct and class in C++?
+
+A struct and class are functionally the same when it comes to performance, memory layout, and feature support. The only differnece is that struct members and inheritence default to public access while classe members and inheritance default to private 
+
+What are templates and when would you use one here?
+
+Templates are blueprints that help you write generic code that can work with any data type without having to duplicate the source code for each type. Instead of putting a traditional data type, you use placeholder T which then gets modified at compile time with the intended data type.
+
+What is const correctness and why does it matter?
+
+Const correctness is a programming practice in C++ that prevents data from being accidentally modified, ensuring that variables, function parameters, and class methods are read-only. This creates a safety net at compile time and makes interfaces more clear and sage. 
+
+What are concepts in C++20?
+
+Concepts are compile-time predicates that prevent improper data types from being inserted into templates. They make the code safer and add a constraint to the data types that can be inserted into a template function or class
 
 
 
