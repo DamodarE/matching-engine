@@ -279,8 +279,6 @@ Preferred commit prefixes include:
 - build:
 - ci:
 
-Avoid meaningless commits or commits created solely to increase contribution counts.
-
 ---
 
 # Guiding Principle
