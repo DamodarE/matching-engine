@@ -302,3 +302,100 @@ Steps:
 Book after:
 BUY  side: empty
 SELL side: empty
+
+---
+
+## Scenario 14 — Modify quantity DOWN, same price (time priority preserved)
+
+Book before:
+BUY  side: $50 → [Order#1: 100 shares (08:00), Order#2: 50 shares (08:01)]
+SELL side: empty
+
+Incoming: MODIFY Order#1 → quantity 40, price unchanged ($50)
+
+Steps:
+1. Look up Order#1 in hashmap
+2. Found — locate node in linked list at price level $50
+3. New price ($50) equals old price ($50), and new quantity (40) is less than old quantity (100)
+4. A quantity decrease at an unchanged price preserves time priority — Order#1 keeps its original timestamp and its current position in the linked list
+5. Update Order#1's quantity in place to 40 shares
+6. Update price level $50's total_quantity (100 → 40)
+7. Order#1 remains at the head of the list, still ahead of Order#2
+
+Book after:
+BUY  side: $50 → [Order#1: 40 shares (08:00), Order#2: 50 shares (08:01)]
+SELL side: empty
+
+---
+
+## Scenario 15 — Modify quantity UP, same price (time priority lost)
+
+Book before:
+BUY  side: $50 → [Order#1: 40 shares (08:00), Order#2: 50 shares (08:01)]
+SELL side: empty
+
+Incoming: MODIFY Order#1 → quantity 90, price unchanged ($50)
+
+Steps:
+1. Look up Order#1 in hashmap
+2. Found — locate node in linked list at price level $50
+3. New price ($50) equals old price ($50), but new quantity (90) is greater than old quantity (40)
+4. A quantity increase forfeits time priority, even though the price did not change
+5. Remove Order#1 from its current position in the linked list at $50
+6. Assign Order#1 a new timestamp (08:02) and set its quantity to 90 shares
+7. Re-insert Order#1 at the tail of the $50 queue
+8. Order#2 (08:01) now has priority over Order#1 at this price level
+9. Update price level $50's total_quantity (40 → 90)
+
+Book after:
+BUY  side: $50 → [Order#2: 50 shares (08:01), Order#1: 90 shares (08:02)]
+SELL side: empty
+
+---
+
+## Scenario 16 — Modify price, order re-enters as a new incoming order and crosses the spread
+
+Book before:
+BUY  side: $50 → [Order#1: 100 shares (08:00)]
+SELL side: $52 → [Order#2: 60 shares (08:01)]
+
+Incoming: MODIFY Order#1 → price $52, quantity unchanged (100 shares)
+
+Steps:
+1. Look up Order#1 in hashmap
+2. Found — locate node in linked list at price level $50
+3. New price ($52) differs from old price ($50) — any price change forfeits time priority entirely, regardless of quantity
+4. Remove Order#1 from the $50 price level's linked list and delete its old hashmap entry
+5. Price level $50 is now empty, remove from BST
+6. Re-submit Order#1 as a brand-new incoming BUY order: 100 shares @ $52, with a new timestamp (08:02) — it goes through the normal matching path, not a direct re-insert
+7. Look for the best ask — best ask is $52
+8. $52 >= $52, match found
+9. fill_qty = min(100, 60) = 60
+10. Execute trade at $52 for 60 shares
+11. SELL Order#2 fully filled, remove from list
+12. Price level $52 on SELL side is now empty, remove from BST
+13. Order#1 partially filled, 40 shares remaining
+14. No more SELL orders in book, add remaining 40 shares of Order#1 to BUY side at $52 with timestamp (08:02)
+
+Book after:
+BUY  side: $52 → [Order#1: 40 shares (08:02)]
+SELL side: empty
+
+---
+
+## Scenario 17 — Modify an order ID that does not exist
+
+Book before:
+BUY  side: $50 → [Order#1: 100 shares]
+SELL side: empty
+
+Incoming: MODIFY Order#99 → quantity 50, price $50
+
+Steps:
+1. Look up Order#99 in hashmap
+2. Not found
+3. Return error
+
+Book after:
+BUY  side: $50 → [Order#1: 100 shares]
+SELL side: empty

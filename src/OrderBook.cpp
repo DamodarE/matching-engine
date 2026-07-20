@@ -44,11 +44,39 @@ bool OrderBook::cancelOrder(int order_id) {
 }
 
 bool OrderBook::modifyOrder(int order_id, int new_price, int new_quantity) {
-    // TODO: implement order modification in a later session.
-    (void)order_id;
-    (void)new_price;
-    (void)new_quantity;
-    return false;
+    auto lookup_it = order_lookup_.find(order_id);
+    if (lookup_it == order_lookup_.end()) {
+        return false;
+    }
+
+    const OrderLocation loc = lookup_it->second;
+    Order& existing = *loc.it;
+
+    if (new_price == loc.price && new_quantity <= existing.quantity) {
+        // Quantity decrease (or unchanged) at the same price preserves time
+        // priority: mutate in place, keep the order's position in the queue.
+        int delta = existing.quantity - new_quantity;
+        existing.quantity = new_quantity;
+
+        if (loc.side == Side::BUY) {
+            bids_.find(loc.price)->second.total_quantity -= delta;
+        } else {
+            asks_.find(loc.price)->second.total_quantity -= delta;
+        }
+        return true;
+    }
+
+    // Quantity increase or any price change forfeits time priority: cancel
+    // the resting order and resubmit it as a brand-new incoming order so it
+    // goes through the normal matching path, including crossing the spread.
+    Order resubmitted = existing;
+    resubmitted.price = new_price;
+    resubmitted.quantity = new_quantity;
+    resubmitted.timestamp = existing.timestamp + 1;
+
+    cancelOrder(order_id);
+    matchOrder(resubmitted);
+    return true;
 }
 
 std::size_t OrderBook::bidLevelCount() const {

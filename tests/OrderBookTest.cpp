@@ -222,3 +222,89 @@ TEST(OrderBookMatchTest, SamePriceLevelRespectsTimePriority) {
     EXPECT_FALSE(book.cancelOrder(1));
     EXPECT_TRUE(book.cancelOrder(2));
 }
+
+TEST(OrderBookModifyTest, QuantityDecreaseSamePricePreservesTimePriority) {
+    // Mirrors docs/scenarios.md Scenario 14.
+    OrderBook book;
+    book.addOrder(Order{1, Side::BUY, 50, 100, 1});
+    book.addOrder(Order{2, Side::BUY, 50, 50, 2});
+
+    EXPECT_TRUE(book.modifyOrder(1, 50, 40));
+
+    ASSERT_EQ(book.bidLevelCount(), 1u);
+    EXPECT_EQ(book.bestBidPrice(), 50);
+    EXPECT_EQ(book.bestBidQuantity(), 90); // 40 + 50
+
+    // Order#1 must still be at the head of the queue: a sell that exactly
+    // matches its new quantity should fill Order#1, not Order#2.
+    Order incomingSell{3, Side::SELL, 50, 40, 3};
+    auto trades = book.matchOrder(incomingSell);
+
+    ASSERT_EQ(trades.size(), 1u);
+    EXPECT_EQ(trades[0].buy_order_id, 1);
+    EXPECT_EQ(trades[0].quantity, 40);
+
+    // Order#1 fully consumed; Order#2 still resting untouched.
+    EXPECT_FALSE(book.cancelOrder(1));
+    EXPECT_TRUE(book.cancelOrder(2));
+}
+
+TEST(OrderBookModifyTest, QuantityIncreaseSamePriceLosesTimePriority) {
+    // Mirrors docs/scenarios.md Scenario 15.
+    OrderBook book;
+    book.addOrder(Order{1, Side::BUY, 50, 40, 1});
+    book.addOrder(Order{2, Side::BUY, 50, 50, 2});
+
+    EXPECT_TRUE(book.modifyOrder(1, 50, 90));
+
+    ASSERT_EQ(book.bidLevelCount(), 1u);
+    EXPECT_EQ(book.bestBidPrice(), 50);
+    EXPECT_EQ(book.bestBidQuantity(), 140); // 90 + 50
+
+    // Order#2 now has priority: a sell matching its size should fill Order#2
+    // first, even though Order#1 was the one already resting at this price.
+    Order incomingSell{3, Side::SELL, 50, 50, 3};
+    auto trades = book.matchOrder(incomingSell);
+
+    ASSERT_EQ(trades.size(), 1u);
+    EXPECT_EQ(trades[0].buy_order_id, 2);
+    EXPECT_EQ(trades[0].quantity, 50);
+
+    // Order#2 fully consumed; Order#1 still resting with its new quantity.
+    EXPECT_FALSE(book.cancelOrder(2));
+    EXPECT_TRUE(book.cancelOrder(1));
+}
+
+TEST(OrderBookModifyTest, PriceChangeLosesTimePriorityAndCrossesSpread) {
+    // Mirrors docs/scenarios.md Scenario 16.
+    OrderBook book;
+    book.addOrder(Order{1, Side::BUY, 50, 100, 1});
+    book.addOrder(Order{2, Side::SELL, 52, 60, 2});
+
+    EXPECT_TRUE(book.modifyOrder(1, 52, 100));
+
+    // Order#1 re-entered at $52 as a new incoming order and crossed the
+    // spread against Order#2 instead of resting behind it.
+    EXPECT_EQ(book.askLevelCount(), 0u);
+    ASSERT_EQ(book.bidLevelCount(), 1u);
+    EXPECT_EQ(book.bestBidPrice(), 52);
+    EXPECT_EQ(book.bestBidQuantity(), 40); // 100 - 60
+
+    // Order#2 was fully filled by the cross and is gone from the book.
+    EXPECT_FALSE(book.cancelOrder(2));
+    // Order#1's remainder rests in the book under the same order_id.
+    EXPECT_TRUE(book.cancelOrder(1));
+}
+
+TEST(OrderBookModifyTest, ModifyNonexistentOrderReturnsFalseAndLeavesBookUnchanged) {
+    // Mirrors docs/scenarios.md Scenario 17.
+    OrderBook book;
+    book.addOrder(Order{1, Side::BUY, 50, 100, 1});
+
+    EXPECT_FALSE(book.modifyOrder(99, 50, 50));
+
+    ASSERT_EQ(book.bidLevelCount(), 1u);
+    EXPECT_EQ(book.bestBidPrice(), 50);
+    EXPECT_EQ(book.bestBidQuantity(), 100);
+    EXPECT_TRUE(book.cancelOrder(1));
+}
