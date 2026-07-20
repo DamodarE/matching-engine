@@ -41,3 +41,184 @@ TEST(OrderBookTest, CancelOneOfTwoAtSamePriceLeavesOtherOrder) {
     // Order#1 was already removed; cancelling again must fail.
     EXPECT_FALSE(book.cancelOrder(1));
 }
+
+TEST(OrderBookMatchTest, EmptyBookRestsWholeOrderNoTrades) {
+    // Mirrors docs/scenarios.md Scenario 1: nothing to cross against, so the
+    // whole incoming order rests.
+    OrderBook book;
+    Order order{1, Side::BUY, 50, 100, 1};
+
+    auto trades = book.matchOrder(order);
+
+    EXPECT_TRUE(trades.empty());
+    ASSERT_EQ(book.bidLevelCount(), 1u);
+    EXPECT_EQ(book.bestBidPrice(), 50);
+    EXPECT_EQ(book.bestBidQuantity(), 100);
+}
+
+TEST(OrderBookMatchTest, NonCrossingPriceRestsWholeOrderNoTrades) {
+    // Mirrors docs/scenarios.md Scenario 3: a resting ask exists, but the
+    // incoming buy's limit is below it, so there is nothing to cross.
+    OrderBook book;
+    Order restingSell{1, Side::SELL, 60, 100, 1};
+    book.addOrder(restingSell);
+
+    Order incomingBuy{2, Side::BUY, 50, 100, 2};
+    auto trades = book.matchOrder(incomingBuy);
+
+    EXPECT_TRUE(trades.empty());
+    ASSERT_EQ(book.bidLevelCount(), 1u);
+    EXPECT_EQ(book.bestBidPrice(), 50);
+    EXPECT_EQ(book.bestBidQuantity(), 100);
+    ASSERT_EQ(book.askLevelCount(), 1u);
+    EXPECT_EQ(book.bestAskPrice(), 60);
+}
+
+TEST(OrderBookMatchTest, PerfectMatchFullyFillsBothSides) {
+    // Mirrors docs/scenarios.md Scenario 5.
+    OrderBook book;
+    Order restingBuy{1, Side::BUY, 50, 100, 1};
+    book.addOrder(restingBuy);
+
+    Order incomingSell{2, Side::SELL, 50, 100, 2};
+    auto trades = book.matchOrder(incomingSell);
+
+    ASSERT_EQ(trades.size(), 1u);
+    EXPECT_EQ(trades[0].buy_order_id, 1);
+    EXPECT_EQ(trades[0].sell_order_id, 2);
+    EXPECT_EQ(trades[0].price, 50);
+    EXPECT_EQ(trades[0].quantity, 100);
+
+    EXPECT_EQ(book.bidLevelCount(), 0u);
+    EXPECT_EQ(book.askLevelCount(), 0u);
+}
+
+TEST(OrderBookMatchTest, LargerIncomingBuyPartiallyFillsAndRestsRemainder) {
+    // Mirrors docs/scenarios.md Scenario 6.
+    OrderBook book;
+    Order restingSell{1, Side::SELL, 50, 30, 1};
+    book.addOrder(restingSell);
+
+    Order incomingBuy{2, Side::BUY, 50, 100, 2};
+    auto trades = book.matchOrder(incomingBuy);
+
+    ASSERT_EQ(trades.size(), 1u);
+    EXPECT_EQ(trades[0].buy_order_id, 2);
+    EXPECT_EQ(trades[0].sell_order_id, 1);
+    EXPECT_EQ(trades[0].price, 50);
+    EXPECT_EQ(trades[0].quantity, 30);
+
+    EXPECT_EQ(book.askLevelCount(), 0u);
+    ASSERT_EQ(book.bidLevelCount(), 1u);
+    EXPECT_EQ(book.bestBidPrice(), 50);
+    EXPECT_EQ(book.bestBidQuantity(), 70);
+}
+
+TEST(OrderBookMatchTest, LargerIncomingSellPartiallyFillsAndRestsRemainder) {
+    // Mirrors docs/scenarios.md Scenario 7.
+    OrderBook book;
+    Order restingBuy{1, Side::BUY, 50, 30, 1};
+    book.addOrder(restingBuy);
+
+    Order incomingSell{2, Side::SELL, 50, 100, 2};
+    auto trades = book.matchOrder(incomingSell);
+
+    ASSERT_EQ(trades.size(), 1u);
+    EXPECT_EQ(trades[0].buy_order_id, 1);
+    EXPECT_EQ(trades[0].sell_order_id, 2);
+    EXPECT_EQ(trades[0].price, 50);
+    EXPECT_EQ(trades[0].quantity, 30);
+
+    EXPECT_EQ(book.bidLevelCount(), 0u);
+    ASSERT_EQ(book.askLevelCount(), 1u);
+    EXPECT_EQ(book.bestAskPrice(), 50);
+    EXPECT_EQ(book.bestAskQuantity(), 70);
+}
+
+TEST(OrderBookMatchTest, BuyWalksMultiplePriceLevels) {
+    // Mirrors docs/scenarios.md Scenario 8.
+    OrderBook book;
+    book.addOrder(Order{1, Side::SELL, 50, 40, 1});
+    book.addOrder(Order{2, Side::SELL, 51, 40, 2});
+    book.addOrder(Order{3, Side::SELL, 52, 40, 3});
+
+    Order incomingBuy{4, Side::BUY, 52, 100, 4};
+    auto trades = book.matchOrder(incomingBuy);
+
+    ASSERT_EQ(trades.size(), 3u);
+
+    EXPECT_EQ(trades[0].sell_order_id, 1);
+    EXPECT_EQ(trades[0].price, 50);
+    EXPECT_EQ(trades[0].quantity, 40);
+
+    EXPECT_EQ(trades[1].sell_order_id, 2);
+    EXPECT_EQ(trades[1].price, 51);
+    EXPECT_EQ(trades[1].quantity, 40);
+
+    EXPECT_EQ(trades[2].sell_order_id, 3);
+    EXPECT_EQ(trades[2].price, 52);
+    EXPECT_EQ(trades[2].quantity, 20);
+
+    for (const auto& trade : trades) {
+        EXPECT_EQ(trade.buy_order_id, 4);
+    }
+
+    // Buy order fully filled (40+40+20=100), nothing rests on the bid side.
+    EXPECT_EQ(book.bidLevelCount(), 0u);
+    ASSERT_EQ(book.askLevelCount(), 1u);
+    EXPECT_EQ(book.bestAskPrice(), 52);
+    EXPECT_EQ(book.bestAskQuantity(), 20);
+}
+
+TEST(OrderBookMatchTest, SellWalksMultiplePriceLevels) {
+    // Mirrors docs/scenarios.md Scenario 9.
+    OrderBook book;
+    book.addOrder(Order{1, Side::BUY, 52, 40, 1});
+    book.addOrder(Order{2, Side::BUY, 51, 40, 2});
+    book.addOrder(Order{3, Side::BUY, 50, 40, 3});
+
+    Order incomingSell{4, Side::SELL, 50, 100, 4};
+    auto trades = book.matchOrder(incomingSell);
+
+    ASSERT_EQ(trades.size(), 3u);
+
+    EXPECT_EQ(trades[0].buy_order_id, 1);
+    EXPECT_EQ(trades[0].price, 52);
+    EXPECT_EQ(trades[0].quantity, 40);
+
+    EXPECT_EQ(trades[1].buy_order_id, 2);
+    EXPECT_EQ(trades[1].price, 51);
+    EXPECT_EQ(trades[1].quantity, 40);
+
+    EXPECT_EQ(trades[2].buy_order_id, 3);
+    EXPECT_EQ(trades[2].price, 50);
+    EXPECT_EQ(trades[2].quantity, 20);
+
+    for (const auto& trade : trades) {
+        EXPECT_EQ(trade.sell_order_id, 4);
+    }
+
+    EXPECT_EQ(book.askLevelCount(), 0u);
+    ASSERT_EQ(book.bidLevelCount(), 1u);
+    EXPECT_EQ(book.bestBidPrice(), 50);
+    EXPECT_EQ(book.bestBidQuantity(), 20);
+}
+
+TEST(OrderBookMatchTest, SamePriceLevelRespectsTimePriority) {
+    // Mirrors docs/scenarios.md Scenario 12: Order#1 arrived before Order#2
+    // at the same price level, so Order#1 must be filled first.
+    OrderBook book;
+    book.addOrder(Order{1, Side::BUY, 50, 50, 1});
+    book.addOrder(Order{2, Side::BUY, 50, 50, 2});
+
+    Order incomingSell{3, Side::SELL, 50, 50, 3};
+    auto trades = book.matchOrder(incomingSell);
+
+    ASSERT_EQ(trades.size(), 1u);
+    EXPECT_EQ(trades[0].buy_order_id, 1);
+    EXPECT_EQ(trades[0].quantity, 50);
+
+    // Order#1 was consumed; Order#2 survives untouched at the head of the list.
+    EXPECT_FALSE(book.cancelOrder(1));
+    EXPECT_TRUE(book.cancelOrder(2));
+}

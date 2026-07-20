@@ -1,5 +1,7 @@
 #include "OrderBook.h"
 
+#include <algorithm>
+
 void OrderBook::addOrder(const Order& order) {
     // Unconditionally rests the order in the book. Crossing the spread and
     // generating fills is matching logic, implemented in matchOrder().
@@ -57,10 +59,101 @@ std::size_t OrderBook::askLevelCount() const {
     return asks_.size();
 }
 
+int OrderBook::bestBidPrice() const {
+    return bids_.begin()->first;
+}
+
+int OrderBook::bestBidQuantity() const {
+    return bids_.begin()->second.total_quantity;
+}
+
+int OrderBook::bestAskPrice() const {
+    return asks_.begin()->first;
+}
+
+int OrderBook::bestAskQuantity() const {
+    return asks_.begin()->second.total_quantity;
+}
+
 std::vector<Trade> OrderBook::matchOrder(const Order& order) {
-    // Intentionally deferred: matching logic (crossing the spread, walking
-    // price levels in price-time priority, and generating fills) is not yet
-    // implemented. Scoped for later.
-    (void)order;
-    return {};
+    // Entry point for a brand-new incoming order (see docs/matching-flow.md).
+    // Walks the opposite side in price-time priority while the incoming
+    // order's limit crosses the best resting price, filling from the front
+    // of each price level's FIFO list. Any unfilled remainder is rested in
+    // the book via addOrder(), so callers only need to call matchOrder() to
+    // fully process an incoming order.
+    std::vector<Trade> trades;
+    int remaining_qty = order.quantity;
+
+    if (order.side == Side::BUY) {
+        while (remaining_qty > 0 && !asks_.empty()) {
+            auto level_it = asks_.begin();
+            if (order.price < level_it->first) {
+                break; // best ask is above the buy limit, no more crosses
+            }
+            PriceLevel& level = level_it->second;
+
+            while (remaining_qty > 0 && !level.orders.empty()) {
+                Order& resting = level.orders.front();
+                int fill_qty = std::min(remaining_qty, resting.quantity);
+
+                // Trade prints at the resting order's price (the order that
+                // was already in the book), per Scenario 5-9.
+                trades.push_back(Trade{order.order_id, resting.order_id,
+                                        resting.price, fill_qty,
+                                        order.timestamp});
+
+                remaining_qty -= fill_qty;
+                resting.quantity -= fill_qty;
+                level.total_quantity -= fill_qty;
+
+                if (resting.quantity == 0) {
+                    order_lookup_.erase(resting.order_id);
+                    level.orders.pop_front();
+                }
+            }
+
+            if (level.orders.empty()) {
+                asks_.erase(level_it);
+            }
+        }
+    } else {
+        while (remaining_qty > 0 && !bids_.empty()) {
+            auto level_it = bids_.begin();
+            if (order.price > level_it->first) {
+                break; // best bid is below the sell limit, no more crosses
+            }
+            PriceLevel& level = level_it->second;
+
+            while (remaining_qty > 0 && !level.orders.empty()) {
+                Order& resting = level.orders.front();
+                int fill_qty = std::min(remaining_qty, resting.quantity);
+
+                trades.push_back(Trade{resting.order_id, order.order_id,
+                                        resting.price, fill_qty,
+                                        order.timestamp});
+
+                remaining_qty -= fill_qty;
+                resting.quantity -= fill_qty;
+                level.total_quantity -= fill_qty;
+
+                if (resting.quantity == 0) {
+                    order_lookup_.erase(resting.order_id);
+                    level.orders.pop_front();
+                }
+            }
+
+            if (level.orders.empty()) {
+                bids_.erase(level_it);
+            }
+        }
+    }
+
+    if (remaining_qty > 0) {
+        Order remainder = order;
+        remainder.quantity = remaining_qty;
+        addOrder(remainder);
+    }
+
+    return trades;
 }

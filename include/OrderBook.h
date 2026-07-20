@@ -27,6 +27,14 @@ public:
     std::size_t bidLevelCount() const;
     std::size_t askLevelCount() const;
 
+    // Read-only introspection for tests: best price/quantity on each side.
+    // Callers must check the corresponding *LevelCount() first; behavior is
+    // undefined if the side is empty.
+    int bestBidPrice() const;
+    int bestBidQuantity() const;
+    int bestAskPrice() const;
+    int bestAskQuantity() const;
+
 private:
     std::map<int, PriceLevel, std::greater<int>> bids_;
     std::map<int, PriceLevel> asks_;
